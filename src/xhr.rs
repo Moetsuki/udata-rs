@@ -2,8 +2,9 @@ use std::sync::{Arc, Mutex};
 
 use crate::helpers::LimitString;
 use cef::sys::cef_response_filter_status_t::{
-    RESPONSE_FILTER_DONE, RESPONSE_FILTER_ERROR, RESPONSE_FILTER_NEED_MORE_DATA,
+    RESPONSE_FILTER_DONE, RESPONSE_FILTER_NEED_MORE_DATA,
 };
+use cef::sys::cef_return_value_t;
 use cef::{
     CefString, CefStringUtf16, ImplBrowser, ImplFrame, ImplRequest, ImplRequestHandler,
     ImplResourceRequestHandler, ImplResponse, ImplResponseFilter, RequestHandler,
@@ -13,19 +14,36 @@ use cef::{
     sys,
 };
 
+use cef::{CefStringMultimap, ImplCallback, ReturnValue};
+
 //
 // RequestHandler
 //
 
+/// A custom implementation of `RequestHandler` for handling requests.
 pub struct DemoRequestHandler(*mut RcImpl<sys::_cef_request_handler_t, Self>);
 
 impl DemoRequestHandler {
+    /// Creates a new instance of `DemoRequestHandler`.
     pub(crate) fn new() -> RequestHandler {
         RequestHandler::new(Self(std::ptr::null_mut()))
     }
 }
 
 impl ImplRequestHandler for DemoRequestHandler {
+    /// Provides a resource request handler for specific requests.
+    ///
+    /// # Parameters
+    /// - `_browser`: The browser instance.
+    /// - `_frame`: The frame instance.
+    /// - `_request`: The request being processed.
+    /// - `_is_navigation`: Indicates if the request is a navigation.
+    /// - `_is_download`: Indicates if the request is a download.
+    /// - `_request_initiator`: The origin of the request.
+    /// - `_disable_default_handling`: Optionally disables default handling.
+    ///
+    /// # Returns
+    /// An optional `ResourceRequestHandler` instance.
     fn get_resource_request_handler(
         &self,
         _browser: Option<&mut impl ImplBrowser>,
@@ -36,43 +54,44 @@ impl ImplRequestHandler for DemoRequestHandler {
         _request_initiator: Option<&CefString>,
         _disable_default_handling: Option<&mut ::std::os::raw::c_int>,
     ) -> Option<ResourceRequestHandler> {
-        eprintln!(
-            ">> +-----+ DemoRequestHandler::get_resource_request_handler --> DemoResourceRequestHandler"
-        );
-
         let request = _request.unwrap();
-        let url = CefStringUtf16::from(&request.get_url());
-        eprintln!(">>       | URL:  {:}", url.to_string().limit(120));
-        eprintln!(">>       | Mime: {:?}", request.get_resource_type());
-
-        if let Some(request_initiator) = _request_initiator {
-            eprintln!(">>       | Request initiator: {}", request_initiator);
-        }
-
-        eprintln!(">>       | Is navigation: {:}", _is_navigation);
-
-        eprintln!(">>       | Is download: {:}", _is_download);
-
-        let cache_control_str = CefString::from("Cache-Control");
-        // let pragma_str = CefString::from("Pragma");
-        // let expires_str = CefString::from("Expires");
-
-        let cache_control_val = CefString::from("no-cache, no-store, must-revalidate");
-        // let pragma_val = CefString::from("no-cache");
-        // let expires_val = CefString::from("0");
-
-        request.set_header_by_name(Some(&cache_control_str), Some(&cache_control_val), 1);
-
-        // Verify the header was set correctly
-        let header_value = request.get_header_by_name(Some(&cache_control_str));
-        eprintln!(
-            "Header set: {} = {}",
-            cache_control_str,
-            CefString::from(&header_value)
-        );
 
         // Check if its an XHR request
         if request.get_resource_type() == ResourceType::from(sys::cef_resource_type_t::RT_XHR) {
+            let cache_control_str = CefString::from("Cache-Control");
+            let pragma_str = CefString::from("Pragma");
+            let expires_str = CefString::from("Expires");
+
+            let cache_control_val = CefString::from("no-cache, no-store, must-revalidate");
+            let pragma_val = CefString::from("no-cache");
+            let expires_val = CefString::from("0");
+
+            // Verify the header was set correctly
+            let mut map = CefStringMultimap::new().unwrap();
+            request.get_header_map(Some(&mut map));
+
+            map.append(&cache_control_str, &cache_control_val);
+            map.append(&pragma_str, &pragma_val);
+            map.append(&expires_str, &expires_val);
+
+            request.set_header_map(Some(&mut map));
+
+            let mut map2 = CefStringMultimap::new().unwrap();
+            request.get_header_map(Some(&mut map2));
+
+            eprintln!(">> {:?}", map2);
+
+            let url = CefStringUtf16::from(&request.get_url());
+            eprintln!(">>       | URL:  {:}", url.to_string().limit(120));
+            eprintln!(">>       | Mime: {:?}", request.get_resource_type());
+
+            if let Some(request_initiator) = _request_initiator {
+                eprintln!(">>       | Request initiator: {}", request_initiator);
+            }
+
+            eprintln!(">>       | Is navigation: {:}", _is_navigation);
+
+            eprintln!(">>       | Is download: {:}", _is_download);
             eprintln!(">>       | Found XHR request");
             return Some(DemoResourceRequestHandler::new());
         }
@@ -83,6 +102,8 @@ impl ImplRequestHandler for DemoRequestHandler {
             None
         }
     }
+
+    /// Returns the raw pointer to the underlying CEF request handler.
     fn get_raw(&self) -> *mut sys::_cef_request_handler_t {
         self.0 as *mut sys::_cef_request_handler_t
     }
@@ -92,15 +113,47 @@ impl ImplRequestHandler for DemoRequestHandler {
 // ResourceHandler
 //
 
+/// A custom implementation of `ResourceRequestHandler` for handling resource requests.
 pub struct DemoResourceRequestHandler(*mut RcImpl<sys::_cef_resource_request_handler_t, Self>);
 
 impl DemoResourceRequestHandler {
+    /// Creates a new instance of `DemoResourceRequestHandler`.
     fn new() -> ResourceRequestHandler {
         ResourceRequestHandler::new(Self(std::ptr::null_mut()))
     }
 }
 
 impl ImplResourceRequestHandler for DemoResourceRequestHandler {
+    /// Called before a resource is loaded.
+    ///
+    /// # Parameters
+    /// - `_browser`: The browser instance.
+    /// - `_frame`: The frame instance.
+    /// - `_request`: The request being processed.
+    /// - `_callback`: A callback for asynchronous handling.
+    ///
+    /// # Returns
+    /// A `ReturnValue` indicating how the resource load should proceed.
+    fn on_before_resource_load(
+        &self,
+        _browser: Option<&mut impl ImplBrowser>,
+        _frame: Option<&mut impl ImplFrame>,
+        _request: Option<&mut impl ImplRequest>,
+        _callback: Option<&mut impl ImplCallback>,
+    ) -> ReturnValue {
+        ReturnValue::from(cef_return_value_t::RV_CONTINUE)
+    }
+
+    /// Called when a resource response is received.
+    ///
+    /// # Parameters
+    /// - `_browser`: The browser instance.
+    /// - `_frame`: The frame instance.
+    /// - `_request`: The request being processed.
+    /// - `_response`: The response received.
+    ///
+    /// # Returns
+    /// An integer indicating the result of the response handling.
     fn on_resource_response(
         &self,
         _browser: Option<&mut impl ImplBrowser>,
@@ -108,22 +161,19 @@ impl ImplResourceRequestHandler for DemoResourceRequestHandler {
         _request: Option<&mut impl ImplRequest>,
         _response: Option<&mut impl ImplResponse>,
     ) -> ::std::os::raw::c_int {
-        eprintln!("DemoResourceRequestHandler::on_resource_response");
-
-        let response = _response.unwrap();
-        let request = _request.unwrap();
-        let url = CefStringUtf16::from(&request.get_url());
-        eprintln!("URL:    {:}", url.to_string().limit(120));
-        eprintln!("Status: {}", response.get_status());
-        eprintln!(
-            "Mime:   {}",
-            CefStringUtf16::from(&response.get_mime_type())
-        );
-
-        // Return 0 to allow the resource to load
         Default::default()
     }
 
+    /// Provides a response filter for modifying resource responses.
+    ///
+    /// # Parameters
+    /// - `_browser`: The browser instance.
+    /// - `_frame`: The frame instance.
+    /// - `_request`: The request being processed.
+    /// - `_response`: The response received.
+    ///
+    /// # Returns
+    /// An optional `ResponseFilter` instance.
     fn get_resource_response_filter(
         &self,
         _browser: Option<&mut impl ImplBrowser>,
@@ -135,12 +185,31 @@ impl ImplResourceRequestHandler for DemoResourceRequestHandler {
             "DemoResourceRequestHandler::get_resource_response_filter --> DemoResponseFilter"
         );
 
-        Some(DemoResponseFilter::new())
+        let mut headers = CefStringMultimap::new().unwrap();
 
-        //// Don't filter other resources
-        // None
+        if let Some(req) = _request.as_ref() { req.get_header_map(Some(&mut headers)); }
+        
+        let url = {
+            if let Some(req) = _request.as_ref() {
+                let uri = req.get_url();
+                CefString::from(&uri).to_string()
+            } else {
+                String::from("")
+            }
+        };
+
+       Some(DemoResponseFilter::new(headers, url))
     }
 
+    /// Called when a resource load is complete.
+    ///
+    /// # Parameters
+    /// - `_browser`: The browser instance.
+    /// - `_frame`: The frame instance.
+    /// - `_request`: The request being processed.
+    /// - `_response`: The response received.
+    /// - `_status`: The status of the request.
+    /// - `_received_content_length`: The length of the content received.
     fn on_resource_load_complete(
         &self,
         _browser: Option<&mut impl ImplBrowser>,
@@ -150,13 +219,9 @@ impl ImplResourceRequestHandler for DemoResourceRequestHandler {
         _status: UrlrequestStatus,
         _received_content_length: i64,
     ) {
-        eprintln!(">>       +------+ DemoResourceRequestHandler::on_resource_load_complete");
-        eprintln!(
-            ">>              | Received content length: {}",
-            _received_content_length
-        );
     }
 
+    /// Returns the raw pointer to the underlying CEF resource request handler.
     fn get_raw(&self) -> *mut sys::_cef_resource_request_handler_t {
         self.0 as *mut sys::_cef_resource_request_handler_t
     }
@@ -166,82 +231,83 @@ impl ImplResourceRequestHandler for DemoResourceRequestHandler {
 // ResponseFilter
 //
 
+/// A custom implementation of `ResponseFilter` for filtering response data.
 pub struct DemoResponseFilter {
     object: *mut RcImpl<sys::_cef_response_filter_t, Self>,
     buffer: Arc<Mutex<Vec<u8>>>,
+    request_headers: CefStringMultimap,
+    url: String,
 }
 
 impl DemoResponseFilter {
-    fn new() -> ResponseFilter {
+    /// Creates a new instance of `DemoResponseFilter`.
+    ///
+    /// # Parameters
+    /// - `request_headers`: The headers of the request.
+    /// - `url`: The URL of the request.
+    ///
+    /// # Returns
+    /// A new `ResponseFilter` instance.
+    fn new(request_headers: CefStringMultimap, url: String) -> ResponseFilter {
         ResponseFilter::new(Self {
             object: std::ptr::null_mut(),
             buffer: Arc::new(Mutex::new(Vec::new())),
+            request_headers,
+            url,
         })
     }
 }
 
 impl ImplResponseFilter for DemoResponseFilter {
+    /// Initializes the filter.
+    ///
+    /// # Returns
+    /// An integer indicating success (1) or failure (0).
     fn init_filter(&self) -> ::std::os::raw::c_int {
-        // Reset the buffer for a new request
         let mut buffer = self.buffer.lock().unwrap();
         buffer.clear();
         1 // Return true to indicate success
     }
 
+    /// Filters the response data.
+    ///
+    /// # Parameters
+    /// - `_data_in`: The input data.
+    /// - `_data_in_read`: The amount of input data read.
+    /// - `_data_out`: The output data.
+    /// - `_data_out_written`: The amount of output data written.
+    ///
+    /// # Returns
+    /// A `ResponseFilterStatus` indicating the filter status.
     fn filter(
         &self,
-        data_in: Option<&mut Vec<u8>>,
-        data_in_read: Option<&mut usize>,
-        data_out: Option<&mut Vec<u8>>,
-        data_out_written: Option<&mut usize>,
+        _data_in: Option<&mut Vec<u8>>,
+        _data_in_read: Option<&mut usize>,
+        _data_out: Option<&mut Vec<u8>>,
+        _data_out_written: Option<&mut usize>,
     ) -> ResponseFilterStatus {
-        if let Some(data_in) = data_in {
-            let data_in_size = data_in.len();
+        eprintln!(">>       +------+ FILTA FILTA FILTAAAAA");
+        eprintln!(">>              | URL:  {:}", self.url.limit(120));
 
-            println!("Data in size: {}", data_in_size);
-
-            if !data_in.is_empty() {
-                if let Some(data_out) = data_out {
-                    let copy_size = data_in_size.min(data_out.len());
-                    data_out[..copy_size].copy_from_slice(&data_in[..copy_size]);
-
-                    if let Some(data_in_read) = data_in_read {
-                        *data_in_read = copy_size;
-                    }
-
-                    if let Some(data_out_written) = data_out_written {
-                        *data_out_written = copy_size;
-                    }
-
-                    // Store data for later use
-                    let mut buffer = self.buffer.lock().unwrap();
-                    buffer.extend_from_slice(&data_in[..copy_size]);
-
-                    // If we couldn't copy all the data, need more calls
-                    if copy_size < data_in.len() {
-                        eprintln!("Need more data");
-                        return ResponseFilterStatus::from(RESPONSE_FILTER_NEED_MORE_DATA);
-                    }
-
-                    eprintln!("Done copying data");
-                    return ResponseFilterStatus::from(RESPONSE_FILTER_DONE);
-                }
-            }
-        } else if data_out.is_some() {
-            // No input but output buffer provided - this is the flush case
-            // Just indicate we're done since there's nothing to write
-            if let Some(data_out_written) = data_out_written {
-                *data_out_written = 0;
-            }
-
-            eprintln!("Done flushing data");
+        if _data_in.is_none() {
             return ResponseFilterStatus::from(RESPONSE_FILTER_DONE);
         }
 
+        let data_in = _data_in.unwrap();
+        let data_out = _data_out.unwrap();
+        let data_in_read = _data_in_read.unwrap();
+        let data_out_written = _data_out_written.unwrap();
+
+        data_out[..data_in.len()].copy_from_slice(&data_in[..]);
+
+        *data_in_read = data_in.len();
+        *data_out_written = data_in.len();
+
         eprintln!("Error filtering data");
-        ResponseFilterStatus::from(RESPONSE_FILTER_ERROR)
+        ResponseFilterStatus::from(RESPONSE_FILTER_NEED_MORE_DATA)
     }
 
+    /// Returns the raw pointer to the underlying CEF response filter.
     fn get_raw(&self) -> *mut sys::_cef_response_filter_t {
         self.object as *mut sys::_cef_response_filter_t
     }
@@ -334,6 +400,8 @@ impl Clone for DemoResponseFilter {
         Self {
             object: self.object,
             buffer: self.buffer.clone(),
+            request_headers: self.request_headers.clone(),
+            url: self.url.clone(),
         }
     }
 }
@@ -346,3 +414,4 @@ impl Rc for DemoResponseFilter {
         }
     }
 }
+

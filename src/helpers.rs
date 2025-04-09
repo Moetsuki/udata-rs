@@ -16,3 +16,8 @@ pub fn fmt_cef_string_utf16_t(s: &cef::sys::_cef_string_utf16_t) -> String {
     let slice = unsafe { std::slice::from_raw_parts(s.str_, s.length) };
     String::from_utf16_lossy(slice)
 }
+
+pub fn fmt_cef_string_utf16_userfree(s: &cef::CefStringUserfreeUtf16) -> String {
+    let st = cef::CefString::from(s);
+    st.to_string()
+}
