@@ -1,7 +1,6 @@
-#![allow(dead_code)]
-#![allow(clippy::new_ret_no_self)]
 mod app;
 mod client;
+mod filter;
 mod helpers;
 mod process;
 mod tests;
