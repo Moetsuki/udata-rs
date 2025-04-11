@@ -7,6 +7,7 @@ mod tests;
 mod window;
 mod xhr;
 
+mod config;
 use std::sync::{Arc, Mutex};
 
 use app::DemoApp;
