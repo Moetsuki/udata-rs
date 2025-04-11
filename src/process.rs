@@ -69,7 +69,17 @@ impl ImplBrowserProcessHandler for DemoBrowserProcessHandler {
         
         let mut client = DemoClient::new(config.clone());
         
-        let url = CefString::from("https://www.yahoo.com");
+        let url = {
+            if let Some(config) = config.as_ref() {
+                if let Some(host) = config.host.first().as_ref() {
+                    CefString::from(host.host.as_str())
+                } else {
+                    CefString::from("https://www.example.com")
+                }
+            } else {
+                CefString::from("https://www.example.com")
+            }
+        };
 
         // Create a browser view with the client and URL
         let browser_view = browser_view_create(
