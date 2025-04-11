@@ -12,7 +12,7 @@ use cef::{
     sys,
 };
 
-use crate::process::DemoBrowserProcessHandler;
+use crate::{config::Config, process::DemoBrowserProcessHandler};
 
 /// Main CEF application implementation.
 ///
@@ -25,6 +25,7 @@ use crate::process::DemoBrowserProcessHandler;
 pub struct DemoApp {
     pub object: *mut RcImpl<sys::_cef_app_t, Self>,
     pub window: Arc<Mutex<Option<Window>>>,
+    pub config: Option<Config>,
 }
 
 impl DemoApp {
@@ -35,10 +36,11 @@ impl DemoApp {
     ///
     /// # Returns
     /// A new `App` instance wrapping the `DemoApp` implementation
-    pub fn new(window: Arc<Mutex<Option<Window>>>) -> App {
+    pub fn new(window: Arc<Mutex<Option<Window>>>, config: Option<Config>) -> App {
         App::new(Self {
             object: std::ptr::null_mut(),
             window,
+            config,
         })
     }
 }
@@ -60,6 +62,6 @@ impl ImplApp for DemoApp {
     /// # Returns
     /// An instance of `DemoBrowserProcessHandler` wrapped in `BrowserProcessHandler`
     fn get_browser_process_handler(&self) -> Option<BrowserProcessHandler> {
-        Some(DemoBrowserProcessHandler::new(self.window.clone()))
+        Some(DemoBrowserProcessHandler::new(self.window.clone(), self.config.clone()))
     }
 }

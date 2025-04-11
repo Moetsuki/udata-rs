@@ -28,6 +28,7 @@ use crate::{client::DemoClient, window::DemoWindowDelegate};
 pub struct DemoBrowserProcessHandler {
     pub object: *mut RcImpl<sys::cef_browser_process_handler_t, Self>,
     pub window: Arc<Mutex<Option<Window>>>,
+    pub config: Option<Config>,
 }
 
 impl DemoBrowserProcessHandler {
@@ -38,10 +39,11 @@ impl DemoBrowserProcessHandler {
     ///
     /// # Returns
     /// A new `BrowserProcessHandler` instance wrapping the `DemoBrowserProcessHandler` implementation
-    pub fn new(window: Arc<Mutex<Option<Window>>>) -> BrowserProcessHandler {
+    pub fn new(window: Arc<Mutex<Option<Window>>>, config: Option<Config>) -> BrowserProcessHandler {
         BrowserProcessHandler::new(Self {
             object: std::ptr::null_mut(),
             window,
+            config,
         })
     }
 }
@@ -62,15 +64,11 @@ impl ImplBrowserProcessHandler for DemoBrowserProcessHandler {
     /// browser view, creates a client, and sets up the main application window.
     fn on_context_initialized(&self) {
         println!("cef context intiialized");
-
-        let config: Option<Config> = serde_json::from_reader(
-            std::fs::File::open(".udata/config.json").expect("Failed to open config.json"),
-        ).ok();
         
-        let mut client = DemoClient::new(config.clone());
+        let mut client = DemoClient::new(self.config.clone());
         
         let url = {
-            if let Some(config) = config.as_ref() {
+            if let Some(config) = self.config.as_ref() {
                 if let Some(host) = config.host.first().as_ref() {
                     CefString::from(host.host.as_str())
                 } else {
@@ -93,7 +91,7 @@ impl ImplBrowserProcessHandler for DemoBrowserProcessHandler {
         .expect("Failed to create browser view");
 
         // Create a window delegate and window
-        let mut delegate = DemoWindowDelegate::new(browser_view, config);
+        let mut delegate = DemoWindowDelegate::new(browser_view, self.config.clone());
         if let Ok(mut window) = self.window.lock() {
             *window = Some(
                 window_create_top_level(Some(&mut delegate)).expect("Failed to create window"),

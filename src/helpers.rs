@@ -230,7 +230,7 @@ impl Clone for DemoBrowserProcessHandler {
 
         let window = self.window.clone();
 
-        Self { object, window }
+        Self { object, window, config: self.config.clone() }
     }
 }
 
@@ -319,7 +319,7 @@ impl Clone for DemoApp {
         };
         let window = self.window.clone();
 
-        Self { object, window }
+        Self { object, window, config: self.config.clone() }
     }
 }
 
