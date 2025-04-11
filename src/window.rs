@@ -1,13 +1,16 @@
+#![allow(clippy::new_ret_no_self)]
 //! Window management for CEF integration.
 //!
 //! This module contains the implementation of window-related delegates that
 //! handle the window lifecycle, layout, and integration with the browser view.
 //! It manages window creation, destruction, and interaction with the UI.
 
+use crate::config::Config;
+
 use cef::{
     BrowserView, ImplPanelDelegate, ImplView, ImplViewDelegate, ImplWindow, ImplWindowDelegate,
-    WindowDelegate, WrapWindowDelegate, quit_message_loop,
-    rc::{Rc, RcImpl},
+    WindowDelegate, quit_message_loop,
+    rc::RcImpl,
     sys,
 };
 
@@ -20,8 +23,9 @@ use cef::{
 /// * `base` - The raw CEF object pointer for reference counting
 /// * `browser_view` - The browser view to be displayed in this window
 pub struct DemoWindowDelegate {
-    base: *mut RcImpl<sys::_cef_window_delegate_t, Self>,
-    browser_view: BrowserView,
+    pub base: *mut RcImpl<sys::_cef_window_delegate_t, Self>,
+    pub browser_view: BrowserView,
+    pub config: Option<Config>,
 }
 
 impl DemoWindowDelegate {
@@ -32,10 +36,11 @@ impl DemoWindowDelegate {
     ///
     /// # Returns
     /// A new `WindowDelegate` instance wrapping the `DemoWindowDelegate` implementation
-    pub fn new(browser_view: BrowserView) -> WindowDelegate {
+    pub fn new(browser_view: BrowserView, config: Option<Config>) -> WindowDelegate {
         WindowDelegate::new(Self {
             base: std::ptr::null_mut(),
             browser_view,
+            config,
         })
     }
 }
@@ -165,69 +170,5 @@ impl ImplWindowDelegate for DemoWindowDelegate {
     /// 1 if the window can be closed, 0 otherwise
     fn can_close(&self, _window: Option<&mut impl ImplWindow>) -> ::std::os::raw::c_int {
         1
-    }
-}
-
-//
-//
-//
-//
-// //////////////////////////////
-// /          HELPERS           /
-// //////////////////////////////
-//
-//
-//
-//
-
-//
-// DemoWindowDelegate
-//
-
-impl WrapWindowDelegate for DemoWindowDelegate {
-    /// Sets the raw CEF object pointer for this instance.
-    ///
-    /// This method is called by the CEF framework when wrapping the implementation
-    /// in a reference-counted object.
-    ///
-    /// # Arguments
-    /// * `object` - The raw CEF object pointer to set
-    fn wrap_rc(&mut self, object: *mut RcImpl<sys::_cef_window_delegate_t, Self>) {
-        self.base = object;
-    }
-}
-
-impl Clone for DemoWindowDelegate {
-    /// Creates a clone of this window delegate instance.
-    ///
-    /// This implementation ensures proper reference counting of the underlying CEF object.
-    ///
-    /// # Returns
-    /// A new `DemoWindowDelegate` instance that shares the same underlying CEF object
-    fn clone(&self) -> Self {
-        unsafe {
-            let rc_impl = &mut *self.base;
-            rc_impl.interface.add_ref();
-        }
-
-        Self {
-            base: self.base,
-            browser_view: self.browser_view.clone(),
-        }
-    }
-}
-
-impl Rc for DemoWindowDelegate {
-    /// Accesses the base reference-counted object.
-    ///
-    /// This method is required by the CEF framework for reference counting.
-    ///
-    /// # Returns
-    /// A reference to the base reference-counted object
-    fn as_base(&self) -> &sys::cef_base_ref_counted_t {
-        unsafe {
-            let base = &*self.base;
-            std::mem::transmute(&base.cef_object)
-        }
     }
 }

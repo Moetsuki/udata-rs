@@ -1,5 +1,5 @@
 #![allow(clippy::new_ret_no_self)]
-use crate::helpers::LimitString;
+#![allow(clippy::option_map_unit_fn)]
 use cef::CefStringMultimap;
 use cef::ImplResponseFilter;
 use cef::ResponseFilter;
@@ -10,6 +10,9 @@ use cef::sys::cef_response_filter_status_t::{
     RESPONSE_FILTER_DONE, RESPONSE_FILTER_NEED_MORE_DATA,
 };
 use std::sync::{Arc, Mutex};
+
+use crate::config::Config;
+
 //
 // ResponseFilter
 //
@@ -33,6 +36,10 @@ pub struct DemoResponseFilter {
     pub request_headers: CefStringMultimap,
     /// URL of the request being processed
     pub url: String,
+    /// UUID of the request
+    pub uuid: uuid::Uuid,
+    /// General configuration
+    pub config: Option<Config>,
 }
 
 impl DemoResponseFilter {
@@ -45,12 +52,14 @@ impl DemoResponseFilter {
     /// # Returns
     /// A new `ResponseFilter` instance wrapping the `DemoResponseFilter` implementation.
     /// ```
-    pub fn new(request_headers: CefStringMultimap, url: String) -> ResponseFilter {
+    pub fn new(request_headers: CefStringMultimap, config: Option<Config>, url: String) -> ResponseFilter {
         ResponseFilter::new(Self {
             object: std::ptr::null_mut(),
             buffer: Arc::new(Mutex::new(Vec::new())),
             request_headers,
             url,
+            uuid: uuid::Uuid::new_v4(),
+            config,
         })
     }
 }
@@ -99,8 +108,8 @@ impl ImplResponseFilter for DemoResponseFilter {
         _data_out: Option<&mut Vec<u8>>,
         _data_out_written: Option<&mut usize>,
     ) -> ResponseFilterStatus {
-        eprintln!(">>       +------+ FILTER");
-        eprintln!(">>              | URL:  {:}", self.url.limit(120));
+        // eprintln!(">>       +------+ FILTER");
+        // eprintln!(">>              | URL:  {:}", self.url.limit(120));
 
         let mut binding = 0;
         let data_in_read = _data_in_read.unwrap_or(&mut binding);
@@ -113,7 +122,7 @@ impl ImplResponseFilter for DemoResponseFilter {
         }
 
         let data_in = _data_in.unwrap();
-        eprintln!("data_in_size = {}", data_in.len());
+        // eprintln!("data_in_size = {}", data_in.len());
 
         // If there's no output buffer, mark all input as read
         // This is a special CEF case we need to handle
@@ -135,8 +144,18 @@ impl ImplResponseFilter for DemoResponseFilter {
         // Mark how much input data we processed
         *data_in_read = bytes_to_copy;
 
-        eprintln!("data_out_written = {}", *data_out_written);
-        eprintln!("data_in_read = {}", *data_in_read);
+        // eprintln!("data_out_written = {}", *data_out_written);
+        // eprintln!("data_in_read = {}", *data_in_read);
+
+        self.config.as_ref().map(|config| {
+            config.host.iter().find(|host| {
+                self.url.contains(&host.xhr)  
+            }).map(|host| {
+                eprintln!("Host match: {}", host.xhr);
+                let buffer = data_in.clone();
+                eprintln!("{}\n\n\t<<- -->\n\n", String::from_utf8(buffer).unwrap_or(String::from("")));
+            });
+        });
 
         if bytes_to_copy == data_in.len() {
             ResponseFilterStatus::from(RESPONSE_FILTER_DONE)

@@ -8,6 +8,7 @@ mod window;
 mod xhr;
 mod swizzle;
 mod config;
+
 use std::sync::{Arc, Mutex};
 
 use app::DemoApp;

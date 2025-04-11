@@ -14,16 +14,16 @@
 //! - Request interception and header manipulation
 //! - Response filtering and content processing
 //! - Diagnostic logging for debugging XHR traffic
-use crate::helpers::LimitString;
 use cef::sys::cef_return_value_t;
 use cef::{
-    CefString, CefStringUtf16, ImplBrowser, ImplFrame, ImplRequest, ImplRequestHandler,
+    CefString, ImplBrowser, ImplFrame, ImplRequest, ImplRequestHandler,
     ImplResourceRequestHandler, ImplResponse, RequestHandler, ResourceRequestHandler, ResourceType,
     ResponseFilter, UrlrequestStatus, rc::RcImpl, sys,
 };
 
 use cef::{CefStringMultimap, ImplCallback, ReturnValue};
 
+use crate::config::Config;
 use crate::filter::DemoResponseFilter;
 //
 // RequestHandler
@@ -34,7 +34,10 @@ use crate::filter::DemoResponseFilter;
 /// This handler serves as the first point of contact for all requests in the browser.
 /// It identifies XHR requests and applies specialized handling including cache prevention,
 /// request monitoring, and delegation to appropriate resource handlers.
-pub struct DemoRequestHandler(pub *mut RcImpl<sys::_cef_request_handler_t, Self>);
+pub struct DemoRequestHandler {
+    pub base: *mut RcImpl<sys::_cef_request_handler_t, Self>,
+    pub config: Option<Config>,
+}
 
 impl DemoRequestHandler {
     /// Creates a new instance of `DemoRequestHandler`.
@@ -42,13 +45,11 @@ impl DemoRequestHandler {
     /// # Returns
     /// A new `RequestHandler` instance wrapping the `DemoRequestHandler` implementation.
     ///
-    /// # Examples
-    /// ```
-    /// let handler = DemoRequestHandler::new();
-    /// // Pass the handler to a browser client
-    /// ```
-    pub(crate) fn new() -> RequestHandler {
-        RequestHandler::new(Self(std::ptr::null_mut()))
+    pub(crate) fn new(config: Option<Config>) -> RequestHandler {
+        RequestHandler::new(Self {
+            base: std::ptr::null_mut(),
+            config 
+        })
     }
 }
 
@@ -108,28 +109,28 @@ impl ImplRequestHandler for DemoRequestHandler {
 
             request.set_header_map(Some(&mut map));
 
-            let mut map2 = CefStringMultimap::new().unwrap();
-            request.get_header_map(Some(&mut map2));
+            // let mut map2 = CefStringMultimap::new().unwrap();
+            // request.get_header_map(Some(&mut map2));
 
-            eprintln!(">> {:?}", map2);
+            // eprintln!(">> {:?}", map2);
 
-            let url = CefStringUtf16::from(&request.get_url());
-            eprintln!(">>       | URL:  {:}", url.to_string().limit(120));
-            eprintln!(">>       | Mime: {:?}", request.get_resource_type());
+            // let url = CefStringUtf16::from(&request.get_url());
+            // eprintln!(">>       | URL:  {:}", url.to_string().limit(120));
+            // eprintln!(">>       | Mime: {:?}", request.get_resource_type());
 
-            if let Some(request_initiator) = _request_initiator {
-                eprintln!(">>       | Request initiator: {}", request_initiator);
-            }
+            // if let Some(request_initiator) = _request_initiator {
+                // eprintln!(">>       | Request initiator: {}", request_initiator);
+            // }
 
-            eprintln!(">>       | Is navigation: {:}", _is_navigation);
+            // eprintln!(">>       | Is navigation: {:}", _is_navigation);
 
-            eprintln!(">>       | Is download: {:}", _is_download);
-            eprintln!(">>       | Found XHR request");
-            return Some(DemoResourceRequestHandler::new());
+            // eprintln!(">>       | Is download: {:}", _is_download);
+            // eprintln!(">>       | Found XHR request");
+            return Some(DemoResourceRequestHandler::new(self.config.clone()));
         }
 
         if _is_download == 0 && _is_navigation == 0 {
-            Some(DemoResourceRequestHandler::new())
+            Some(DemoResourceRequestHandler::new(self.config.clone()))
         } else {
             None
         }
@@ -141,7 +142,7 @@ impl ImplRequestHandler for DemoRequestHandler {
     /// A raw pointer to the CEF request handler implementation.
     /// This is used by the CEF framework to call back into this implementation.
     fn get_raw(&self) -> *mut sys::_cef_request_handler_t {
-        self.0 as *mut sys::_cef_request_handler_t
+        self.base as *mut sys::_cef_request_handler_t
     }
 }
 
@@ -157,7 +158,10 @@ impl ImplRequestHandler for DemoRequestHandler {
 /// - Process responses after they are received
 /// - Apply filters to response content
 /// - Track completion of resource loading
-pub struct DemoResourceRequestHandler(pub *mut RcImpl<sys::_cef_resource_request_handler_t, Self>);
+pub struct DemoResourceRequestHandler {
+    pub base: *mut RcImpl<sys::_cef_resource_request_handler_t, Self>,
+    pub config: Option<Config>,
+}
 
 impl DemoResourceRequestHandler {
     /// Creates a new instance of `DemoResourceRequestHandler`.
@@ -169,8 +173,11 @@ impl DemoResourceRequestHandler {
     /// ```
     /// let resource_handler = DemoResourceRequestHandler::new();
     /// ```
-    fn new() -> ResourceRequestHandler {
-        ResourceRequestHandler::new(Self(std::ptr::null_mut()))
+    fn new(config: Option<Config>) -> ResourceRequestHandler {
+        ResourceRequestHandler::new(Self {
+            base: std::ptr::null_mut(),
+            config
+        })
     }
 }
 
@@ -247,10 +254,6 @@ impl ImplResourceRequestHandler for DemoResourceRequestHandler {
         _request: Option<&mut impl ImplRequest>,
         _response: Option<&mut impl ImplResponse>,
     ) -> Option<ResponseFilter> {
-        eprintln!(
-            "DemoResourceRequestHandler::get_resource_response_filter --> DemoResponseFilter"
-        );
-
         let mut headers = CefStringMultimap::new().unwrap();
 
         if let Some(req) = _request.as_ref() {
@@ -266,7 +269,7 @@ impl ImplResourceRequestHandler for DemoResourceRequestHandler {
             }
         };
 
-        Some(DemoResponseFilter::new(headers, url))
+        Some(DemoResponseFilter::new(headers, self.config.clone(), url))
     }
 
     /// Called when a resource load is complete.
@@ -298,6 +301,6 @@ impl ImplResourceRequestHandler for DemoResourceRequestHandler {
     /// A raw pointer to the CEF resource request handler implementation.
     /// This is used by the CEF framework to call back into this implementation.
     fn get_raw(&self) -> *mut sys::_cef_resource_request_handler_t {
-        self.0 as *mut sys::_cef_resource_request_handler_t
+        self.base as *mut sys::_cef_resource_request_handler_t
     }
 }
